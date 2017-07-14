@@ -7,13 +7,12 @@
 ;; You must not remove this notice, or any other, from this software.
 
 (ns javelin.core
-  (:require-macros [javelin.core])
   (:require [goog.array :as garray]
             [goog.object :as gobj]))
 
 ;; helpers ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(declare Cell cell? cell input? lens? cmp-rank)
+(declare cell? cell input? lens? cmp-rank)
 
 (def ^:private ^:dynamic *tx* nil)
 (def ^:private last-rank (atom 0))
@@ -153,18 +152,18 @@
   (when (and (cell? c) (.-thunk c)) c))
 
 (defn lens?
-  [c]
   "Returns c if c is a lens, nil otherwise."
+  [c]
   (when (and (cell? c) (.-update c)) c))
 
 (defn input?
-  [c]
   "Returns c if c is an input cell, nil otherwise."
+  [c]
   (when (and (cell? c) (not (formula? c))) c))
 
 (defn constant?
-  [c]
   "Returns c if c is a constant formula cell, nil otherwise."
+  [c]
   (when (and (cell? c) (.-constant c)) c))
 
 (defn set-cell!

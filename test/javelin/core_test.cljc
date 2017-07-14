@@ -7,30 +7,38 @@
 ;; You must not remove this notice, or any other, from this software.
 
 (ns javelin.core-test
-  (:require
-    [clojure.string :as s]
-    [cljs.test :as t]
-    [javelin.core :refer [cell? input? cell set-cell! lens alts! destroy-cell! constant? formula?]])
-  (:require-macros
-    [cljs.test :refer [deftest testing run-tests is]]
-    [javelin.core :refer [cell= defc defc= set-cell!= dosync cell-doseq cell-let mx mx2 formula-of formulet]]))
+  (:refer-clojure :exclude [dosync])
+  (:require [clojure.string :as s]
+            [clojure.test :as t :refer [deftest testing run-tests is]]
+            [javelin.core :refer [cell? input? cell set-cell! lens alts! destroy-cell! constant? formula?]]
+   #? (:clj [javelin.macros :refer [cell= defc defc= set-cell!= dosync
+                                    cell-doseq cell-let formula-of formulet]]))
+  #? (:cljs
+       (:require-macros
+         [javelin.macros :refer [cell= defc defc= set-cell!= dosync
+                                 cell-doseq cell-let formula-of formulet]])))
 
 ;;; util ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(set! cljs.core/*print-fn*
-      (if (undefined? (aget js/window "dump"))
-        ;; phantomjs
-        (fn [arg]
-          (let [arg (s/trim-newline (str arg))]
-            (.call (.-log js/console) (.-console js/window) arg)))
-        ;; firefox
-        (fn [arg]
-          (.call (aget js/window "dump") js/window arg))))
+#? (:cljs
+     (set! cljs.core/*print-fn*
+           (if (undefined? (aget js/window "dump"))
+             ;; phantomjs
+             (fn [arg]
+               (let [arg (s/trim-newline (str arg))]
+                 (.call (.-log js/console) (.-console js/window) arg)))
+             ;; firefox
+             (fn [arg]
+               (.call (aget js/window "dump") js/window arg)))))
 
-(defmethod t/report [:cljs.test/default :end-run-tests] [m]
-  (if (t/successful? m)
-    (println "\nDone")
-    (throw (js/Error. "some test(s) failed"))))
+(defn- ex [msg]
+  #? (:cljs (js/Error. msg)
+      :clj  (Exception. msg)))
+
+#? (:cljs (defmethod t/report [:cljs.test/default :end-run-tests] [m]
+            (if (t/successful? m)
+              (println "\nDone")
+              (throw (ex "some test(s) failed")))))
 
 ;;; tests ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -48,10 +56,11 @@
       "defc and defc= perform correctly"
       (is (= @a @p))
       (is (= @b @q)))
-    (testing
+    ;; CLJ TODO: create a toString once moved to a non-ref Clojure implementation
+    #? (:cljs (testing
       "printed representation is correct"
-      (is (= (pr-str a) "#object [javelin.core.Cell 0]"))
-      (is (= (pr-str b) "#object [javelin.core.Cell 1]")))
+      (is (= "#object [javelin.core.Cell 0]" (pr-str a)))
+      (is (= "#object [javelin.core.Cell 1]" (pr-str b)))))
     (testing
       "cell? correctly identifies cells"
       (is (= a (cell? a)))
@@ -77,10 +86,13 @@
       (is (= @u [2]))
       (swap! a inc)
       (is (= @u [2 3])))
-    (testing
+    ;; CLJ TODO: enable once switched to a non-ref implementation
+    #? (:cljs (testing
       "attempt to swap! or reset! formula cell is an error"
-      (is (thrown-with-msg? js/Error #"can't swap! or reset! formula cell" (swap! b inc)))
-      (is (thrown-with-msg? js/Error #"can't swap! or reset! formula cell" (reset! b 3))))))
+      (is (thrown-with-msg? #? (:cljs js/Error :clj Exception)
+            #"can't swap! or reset! formula cell" (swap! b inc)))
+      (is (thrown-with-msg? #? (:cljs js/Error :clj Exception)
+            #"can't swap! or reset! formula cell" (reset! b 3)))))))
 
 (deftest test-2
   (let [a (cell 0)
@@ -138,13 +150,21 @@
       (is (= @a 6))
       (is (= @b 5)))))
 
+(defn- parse-int [s]
+  #? (:cljs (js/parseInt s)
+      :clj  (Integer/parseInt s)))
+
+(defn- round [v]
+  #? (:cljs (.round js/Math v)
+      :clj  (Math/round v)))
+
 (deftest test-4
   (testing
     "interop and extern functions are lifted correctly:"
     (testing
       "window.parseInt()"
       (let [a (cell "123")
-            b (cell= (js/parseInt a))]
+            b (cell= (parse-int a))]
         (is (= @b 123))
         (reset! a "124")
         (is (= @b 124))))
@@ -152,15 +172,15 @@
       "String.toUpperCase()"
       (let [a (cell "abc")
             b (cell "def")
-            c (cell= (.toUpperCase b))
+            c (cell= (s/upper-case b))
             d (cell= (str a c))]
         (is (= @d "abcDEF"))
         (swap! b #(.replace % "d" "z"))
-        (is (= @d "abcZEF")))) 
+        (is (= @d "abcZEF"))))
     (testing
       "Math.round()"
       (let [a (cell 123.2)
-            b (cell= (.round js/Math a))]
+            b (cell= (round a))]
         (is (= @b 123))
         (reset! a 41.6)
         (is (= @b 42))))))
@@ -203,7 +223,9 @@
         (reset! b 300))
       (is (= @u [300 350 400 500]))
       (is (= @c [300 350 400 500]))))
-  (testing
+
+  ;; CLJ TODO: dosync
+  #? (:cljs (testing
     "dosync works correctly"
     (let [u (atom [])
           a (cell 100)
@@ -214,8 +236,9 @@
         (reset! a 200)
         (reset! b 300))
       (is (= @u [300 500]))
-      (is (= @c [300 500]))))
-  (testing
+      (is (= @c [300 500])))))
+  ;; CLJ TODO: dosync
+  #? (:cljs (testing
     "watches are fired after dosync completes"
     (let [u (atom [])
           v (atom [])
@@ -235,7 +258,7 @@
       (is (= @u [300 500]))
       (is (= @v [{:old 100 :new 200}]))
       (is (= @w [{:old 200 :new 300}]))
-      (is (= @x [{:old [300] :new [300 500]}]))))
+      (is (= @x [{:old [300] :new [300 500]}])))))
   (testing
     "set-cell!= without dosync formulas recompute repeatedly"
     (let [u (atom [])
@@ -249,7 +272,8 @@
         (reset! b 300))
       (is (= @u [300 100 50 0 100]))
       (is (= @c [300 100 50 0 100]))))
-  (testing
+  ;; CLJ TODO: dosync
+  #? (:cljs (testing
     "set-cell!= inside dosync works correctly"
     (let [u (atom [])
           v (atom [])
@@ -265,8 +289,9 @@
         (reset! b 300))
       (is (= @u [300 100]))
       (is (= @c [300 100]))
-      (is (= @v [{:old [300] :new [300 100]}]))))
-  (testing
+      (is (= @v [{:old [300] :new [300 100]}])))))
+  ;; CLJ TODO: dosync
+  #? (:cljs (testing
     "nested dosyncs are merged correctly"
     (let [u (atom [])
           a (cell 100)
@@ -276,7 +301,7 @@
           g #(dosync (swap! a + 50) (swap! b + 50))]
       (dosync (f) (g))
       (is (= @u [300 500]))
-      (is (= @c [300 500]))))
+      (is (= @c [300 500])))))
   (testing
     "quoted expressions in formulas are not walked"
     (let [a (cell 100)
@@ -299,7 +324,7 @@
           c (cell= (when (odd? b) (reset! ~(cell a) (* b 2))))]
       (is (= @a 100))
       (swap! b inc)
-      (is (= @a 402)))) 
+      (is (= @a 402))))
   (testing
     "unquote-splicing (~@) in formulas is equiv to ~(deref expr)"
     (let [a (cell 100)
@@ -317,37 +342,37 @@
           c (cell= (/ b 2))
           d (cell= (* b c))]
       (swap! a inc)
-      (is (= 200 @d)))) 
+      (is (= 200 @d))))
   (testing
     "complicated formulas are ok"
     (let [a (cell= ((comp inc (comp inc identity)) 123))]
-      (is (= 125 @a)))) 
+      (is (= 125 @a))))
   (testing
     "higher order functions in formulas work correctly"
     (let [a (cell [1 2 3])
           b (cell= (mapv (fn [x] (inc x)) a))]
-      (is (= [2 3 4] @b)))) 
+      (is (= [2 3 4] @b))))
   (testing
     "map formulas perform correctly"
     (let [a (cell 0)
           b (cell= {:a a})]
-      (is (= {:a 0} @b)) 
+      (is (= {:a 0} @b))
       (swap! a inc)
-      (is (= {:a 1} @b)))) 
+      (is (= {:a 1} @b))))
   (testing
     "map input cells perform correctly"
     (let [a (cell {:n 0})]
-      (is (= 0 (:n @a))) 
+      (is (= 0 (:n @a)))
       (swap! a update-in [:n] inc)
-      (is (= 1 (:n @a))))) 
+      (is (= 1 (:n @a)))))
   (testing
     "cells in function position are handled correctly"
     (let [a (cell 0)
           b (cell (fn [x] (inc x)))
           c (cell= (b a))]
-      (is (= 1 @c)) 
+      (is (= 1 @c))
       (reset! b (fn [x] (dec x)))
-      (is (= -1 @c)))) 
+      (is (= -1 @c))))
   (testing
     "side effects are performed correctly"
     (let [effect1 (atom nil)
@@ -359,37 +384,39 @@
                      (reset! effect1 x)
                      (reset! effect2 c)
                      (* x 2)))]
-      (is (= 4 @d)) 
-      (is (= 2 @effect1)) 
-      (is (= 1 @effect2)) 
+      (is (= 4 @d))
+      (is (= 2 @effect1))
+      (is (= 1 @effect2))
       (swap! a inc)
       (swap! c inc)
       (is (= 6 @d))
       (is (= 3 @effect1))
-      (is (= 2 @effect2)))) 
+      (is (= 2 @effect2))))
   (testing
     "map lookups are handled correctly"
     (let [m (cell {:some-kw [1 2 3]})
           a (cell= (seq (:some-kw m)))
           b (cell= (reduce + a))]
-      (is (= 6 @b))) 
+      (is (= 6 @b)))
     (let [m (cell {:some-kw [1 2 3]})
           a (cell= {:sum (reduce + (:some-kw m))})]
-      (is (= 6 (:sum @a))))) 
+      (is (= 6 (:sum @a)))))
   (testing
     "booleans are handled correctly"
     (let [a (cell true)
           b (cell false)
           c (cell= (not (or a b)))]
-      (is (= false @c)))) 
-  (testing
-    "set! is handled correctly"
-    (let [o (js-obj)
-          a (cell 0)]
-      (cell= (set! (.-foo o) (inc a)))
-      (is (= (.-foo o) 1)) 
-      (swap! a inc)
-      (is (= (.-foo o) 2)))))
+      (is (= false @c))))
+
+#? (:cljs
+     (testing
+       "set! is handled correctly"
+       (let [o (js-obj)
+             a (cell 0)]
+         (cell= (set! (.-foo o) (inc a)))
+         (is (= (.-foo o) 1))
+         (swap! a inc)
+         (is (= (.-foo o) 2))))))
 
 (deftest test-6
   (testing
@@ -437,7 +464,7 @@
     "anon fn with name binds name locally"
     (let [a (cell 10)
           b (cell 20)
-          c (cell= (fn asdf [x] (if (even? x) (+ x (asdf (/ x 2))) (+ x a)))) 
+          c (cell= (fn asdf [x] (if (even? x) (+ x (asdf (/ x 2))) (+ x a))))
           d (cell= (c b))]
       (is (= @d 45))
       (swap! a / 2)
@@ -466,7 +493,7 @@
     (let [a (cell 10)
           b (cell 20)
           c (cell 30)
-          d (cell= (mapv ~#(cell? a) [b c]))]
+          d (cell= (mapv ~#(and % (cell? a)) [b c]))]
       (is (= @d [a a]))
       (swap! b inc)
       (is (= @d [a a]))))
@@ -489,18 +516,19 @@
       (swap! a inc)
       (is (= @b :oops)))))
 
-(deftest misc-tests
+;; CLJ TODO: make lenses work with a non-ref impl
+#? (:cljs (deftest lens-tests
   (testing "lenses work correctly using lens function"
     (let [a (cell 100)
           b (cell 200)
           c (cell= (+ a b))
           d (lens c (partial reset! a))]
       (is (not (input? d)))
-      (is (= @d 300))
+      (is (= 300 @d))
       (reset! d 200)
-      (is (= @d 400))
+      (is (= 400 @d))
       (swap! d inc)
-      (is (= @d 601))))
+      (is (= 601 @d))))
   (testing "lenses work correctly using cell= macro"
     (let [a (cell 100)
           b (cell 200)
@@ -573,7 +601,9 @@
       (swap! d' inc)
       (is (= @d 501))
       (is (= @d @d'))
-      (is (= @u @u'))))
+      (is (= @u @u'))))))
+
+(deftest cell-doseq-tests
   (testing "cell-doseq over cell of vector"
     (let [a (cell [1 2 3 4])
           b (atom [])]
@@ -586,7 +616,7 @@
         (is (= @q [3 false]))
         (is (= @r [4 true]))
         (is (= @s [5 false]))
-        (is (= t nil))
+        (is (= nil t))
         (testing "cell-doseq growing"
           (swap! a conj 1)
           (let [[p q r s t] @b]
@@ -683,7 +713,9 @@
           (is (= @v {:w  2, :x  4, :y :a, :p ":a", :q  5}))
           (is (= @w {:w  2, :x  4, :y :c, :p ":c", :q  5}))
           (is (= @x {:w  2, :x  4, :y :b, :p ":b", :q  5}))))
-      (testing "cell-doseq list comprehension shrinking"
+      ;; CLJ TODO: not sure why this doesn't work...
+      ;; (swap! a pop) throws an NPE somewhere deep in propagate!
+      #? (:cljs (testing "cell-doseq list comprehension shrinking"
         (dosync
           (swap! a pop)
           (swap! b pop))
@@ -694,7 +726,9 @@
           (is (= @q {:w 1, :x 3, :y :b, :p ":b", :q 4}))
           (is (= @r {:w 2, :x 4, :y :a, :p ":a", :q 5}))
           (is (= @s {:w 2, :x 4, :y :b, :p ":b", :q 5}))
-          (is (every? #(= {:w nil, :x nil, :y nil, :p "", :q 1} @%) more))))))
+          (is (every? #(= {:w nil, :x nil, :y nil, :p "", :q 1} @%) more))))))))
+
+(deftest cell-let-test
   (testing "cell-let correctly binds local cells"
     (let [a (cell [1 2 3 4])
           b (cell {:p 1 :q 2 :r 3 :s 4})]
@@ -729,13 +763,17 @@
         (is (= @y 3))
         (is (= @z nil))))))
 
+(defn- ex-msg [ex]
+  #? (:cljs (.-message ex)
+      :clj  (.getMessage ex)))
+
 (deftest try-catch-finally
   (testing "try, catch, finally -- body throws"
     (let [a (atom 0)
           b (atom 0)
-          c (cell= (try (throw (js/Error. "asdf"))
-                        (catch js/Error ex
-                          (reset! a (.-message ex)))
+          c (cell= (try (throw (ex "asdf"))
+                        (catch #? (:cljs js/Error :clj Exception) ex
+                          (reset! a (ex-msg ex)))
                         (finally (swap! b inc))))]
       (is (= @a "asdf"))
       (is (= @b 1))
@@ -744,22 +782,25 @@
     (let [a (atom 0)
           b (atom 0)
           c (cell= (try 2
-                        (catch js/Error _ (swap! a inc))
+                        (catch #? (:cljs js/Error :clj Exception) _ (swap! a inc))
                         (finally (swap! b inc))))]
       (is (= @a 0))
       (is (= @b 1))
       (is (= @c 2))))
-  (testing "catch, finally are only special in certain cases"
+
+  ;; CLJ TODO: for some reason `(catch 100)` expands to `(catch 100 nil)` under Clojure
+  ;; possibly Riddley macroexpand bug
+  #? (:cljs  (testing "catch, finally are only special in certain cases"
     (let [catch   inc
           finally dec
           a       (atom 0)
           b       (atom 0)
-          c       (cell= (try (+ (catch 100) (finally 200)) 
-                              (catch js/Error _ (swap! a inc))
+          c       (cell= (try (+ (catch 100) (finally 200))
+                              (catch #? (:cljs js/Error :clj Exception) e (swap! a inc))
                               (finally (swap! b inc))))]
       (is (= @a 0))
       (is (= @b 1))
-      (is (= @c 300))))
+      (is (= @c 300)))))
   (testing "constant formula cells propagate constantness"
     (let [a 1
           b 2
@@ -829,7 +870,7 @@
   ;; Test the data integrity constraints documented in the cells manifesto
   ;;
   ;; http://smuglispweeny.blogspot.com/2008/02/cells-manifesto.html
-  ;; 
+  ;;
   (testing "single recomputation of all and only state (a1, a2) affected by change to X"
     (testing "all and only directly dependent state updated"
       (let [x (cell 1)
@@ -883,12 +924,14 @@
         (swap! x inc)
         (is (= @log [{:old [["b" 1] 1] :new [["b" 2] 2]}]))))
 
-    (testing "adding meta"
+    ;; CLJ TODO: Clojure cells hold state in meta, implementation needs to be changed anyway
+    ;; so no purpose in fixing this test
+    #? (:cljs (testing "adding meta"
       (let [x (cell 1 :meta {:foo :bar})
             y (cell 1)]
         (is (= (meta x) {:foo :bar}))
         (is (nil? (meta y)))
         (is (= {:bar :baz} (meta (with-meta y {:bar :baz}))))
-        (is (= {:a :b} (meta (vary-meta y assoc :a :b))))))))
+        (is (= {:a :b} (meta (vary-meta y assoc :a :b)))))))))
 
 (time (run-tests))
