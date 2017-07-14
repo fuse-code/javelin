@@ -27,7 +27,7 @@
                      'quote                         %
                      'clojure.core/unquote          (second %)
                      'clojure.core/unquote-splicing (list 'deref (second %)))
-        walk-unwrap! #(let [s (gensym)] (swap! pass assoc s (unwrapped %)) s)
+        walk-unwrap! #(let [s (gensym "clj")] (swap! pass assoc s (unwrapped %)) s)
 
         walked   (->> (walk/walk-exprs unwrap? walk-unwrap! x)
                       (walk/walk-exprs symbol? walk!))

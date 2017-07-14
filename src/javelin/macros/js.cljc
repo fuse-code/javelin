@@ -98,9 +98,9 @@
 (defn walk-sym [x local]
   (if-not (hoist? x local)
     x
-    (let [h (@*hoist* x)]
-      (when-not h (swap! *hoist* conj (with-meta x {::h (gensym)})))
-      (::h (meta (@*hoist* x))))))
+    (if-let [s (some #(when (= (second %) x) (first %)) @*hoist*)]
+      s
+      (let [s (gensym "js")] (swap! *hoist* conj [s x]) s))))
 
 (defn walk-map [x local]
   (into (empty x) (map #(mapv (fn [x] (walk x local)) %) x)))
@@ -147,7 +147,7 @@
       (to-list `(~sym ~@fname ~@arities)))))
 
 (defn walk-passthru [x local]
-  (let [s (gensym)] (swap! *pass* assoc s x) s))
+  (let [s (gensym "js")] (swap! *pass* assoc s x) s))
 
 (defn walk-dot [[sym obj meth & more] local]
   (let [obj       (walk obj local)
@@ -178,9 +178,9 @@
         :else       x))
 
 (defn hoist [x env]
-  (binding [*env* env, *hoist* (atom #{}), *pass* (atom {})]
+  (binding [*env* env, *hoist* (atom []), *pass* (atom {})]
     (let [body          (walk (macroexpand-all* env x) #{})
           [params args] (if (empty? @*pass*) [[] []] (apply map vector @*pass*))
-          params        (into params (map #(::h (meta %)) @*hoist*))
-          args          (into args @*hoist*)]
+          params        (into params (map first @*hoist*))
+          args          (into args (map second @*hoist*))]
       [(list 'fn params body) args])))
