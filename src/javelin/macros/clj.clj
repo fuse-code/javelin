@@ -14,11 +14,13 @@
                     (not (contains? env %))
                     (contains? specials %)
                     (core? %))
-        walk!    #(cond
-                    (not (skip? %))
-                    (do (swap! hoist conj %) (local %))
-
-                    :else %)
+        find-sym #(fn [[s l]] (when (= l %) s))
+        walk!    (fn [x]
+                   (if (skip? x)
+                     x
+                     (if-let [s (some (find-sym x) @hoist)]
+                       s
+                       (let [s (gensym "clj")] (swap! hoist conj [s x]) s))))
 
         ;; unquoted/quoted expressions are preserved as is
         unquote?  #{'clojure.core/unquote 'clojure.core/unquote-splicing}
@@ -33,7 +35,6 @@
                       (walk/walk-exprs symbol? walk!))
 
         [params args] (if (empty? @pass) [[] []] (apply map vector @pass))
-        hoisted  (distinct @hoist)
-        params   (into params (map local hoisted))
-        args     (into args hoisted)]
+        params   (into params (map first @hoist))
+        args     (into args (map second @hoist))]
     [`(fn ~params ~walked) args]))

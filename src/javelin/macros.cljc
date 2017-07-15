@@ -52,8 +52,8 @@
    `(with-let [c# (cell= ~expr)]
       (macro/case
         :cljs (set! (.-update c#) ~f)
-        ;; TODO: lenses in Clojure
-        :clj nil))))
+        :clj (clojure.core/dosync
+               (ref-set (.-update c#) ~f))))))
 
 (defmacro set-cell!=
   ([c expr]
