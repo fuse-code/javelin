@@ -65,7 +65,8 @@
 
 (defmacro defc
   ([sym expr] `(def ~sym (javelin.core/cell ~expr)))
-  ([sym doc expr] `(def ~sym ~doc (javelin.core/cell ~expr))))
+  ([sym doc expr] `(def ~sym ~doc (javelin.core/cell ~expr)))
+  ([graph sym doc expr] `(def ~sym ~doc (javelin.core/cell ~expr :graph ~graph))))
 
 (defmacro defc=
   ([sym expr] `(def ~sym (cell= ~expr)))

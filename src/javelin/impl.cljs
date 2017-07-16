@@ -14,6 +14,25 @@
 
 (declare cell? cell input? lens? cmp-rank)
 
+;; Graph
+(defn graph [name]
+  {::name  name
+   ::cells (atom #{})})
+
+(defn assign-to-graph [cell graph]
+  (assert graph "graph must be specified")
+  (update graph ::cells #(swap! % conj cell)))
+
+(defn remove-from-graph [cell graph]
+  (assert graph "graph must be specified")
+  (update graph ::cells #(swap! % disj cell)))
+
+(defn graph-of [cell]
+  (.-graph cell))
+
+(def           default-graph (graph 'javelin.graph/default))
+(def ^:dynamic *graph*       default-graph)
+
 (def ^:private ^:dynamic *tx* nil)
 (def ^:private last-rank (atom 0))
 
@@ -40,9 +59,9 @@
 ;; javelin ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn destroy-cell!
-  ([this]
-   (destroy-cell! this nil))
-  ([this keep-watches?]
+  ([this] (destroy-cell! this nil))
+  ([this keep-watches?] (destroy-cell! this keep-watches? false))
+  ([this keep-watches? keep-in-graph?]
    (let [srcs (.-sources this)]
      (set! (.-sources this) (array))
      (set! (.-update this) nil)
@@ -50,6 +69,10 @@
      (when-not keep-watches?
        (set! (.-watches this) {})
        (set! (.-numwatches this) 0))
+     (when-not keep-in-graph?
+       (remove-from-graph this (.-graph this))
+        ;; TODO: this is an orphaned cell - what should we do with it?
+       (set! (.-graph this) nil))
      (dotimes [i (alength srcs)]
        (when-let [c (cell? (aget srcs i))]
          (garray/removeIf (.-sinks c) #(= % this)))))))
@@ -79,26 +102,27 @@
 
 (defn set-formula!
   ([this]
-   (destroy-cell! this true)
+   (destroy-cell! this true true)
    (set-formula!* this nil nil nil))
   ([this f]
-   (destroy-cell! this true)
+   (destroy-cell! this true true)
    (set-formula!* this f (array) nil))
   ([this f sources]
-   (destroy-cell! this true)
+   (destroy-cell! this true true)
    (set-formula!* this f (into-array sources) nil))
   ([this f sources updatefn]
-   (destroy-cell! this true)
+   (destroy-cell! this true true)
    (set-formula!* this f (into-array sources) updatefn)))
 
-(deftype Cell [meta state rank prev sources sinks thunk watches update constant numwatches]
+(deftype Cell [meta graph state rank prev sources sinks thunk watches update constant numwatches]
   cljs.core/IPrintWithWriter
   (-pr-writer [this w _]
     (write-all w "#object [javelin.core.Cell " (pr-str state) "]"))
 
   cljs.core/IWithMeta
   (-with-meta [this meta]
-    (Cell. meta state rank prev sources sinks thunk watches update constant numwatches))
+    (doto (Cell. meta graph state rank prev sources sinks thunk watches update constant numwatches)
+      (assign-to-graph graph)))
 
   cljs.core/IMeta
   (-meta [this] meta)
@@ -151,13 +175,31 @@
   (set! (.-state c) x) (set-formula! c))
 
 (defn cell
-  ([x] (Cell. nil x (next-rank) x (array) (array) nil {} nil false 0))
-  ([x & {:keys [meta]}] (Cell. meta x (next-rank) x (array) (array) nil {} nil false 0)))
+  ([x] (cell x :meta nil))
+  ([x & {:keys [meta graph]}]
+   (let [graph (or graph *graph*)]
+     (doto (Cell. meta graph x (next-rank) x (array) (array) nil {} nil false 0)
+       (assign-to-graph graph)))))
+
+(defn- validate-single-graph! [graphs]
+  (when-not (= (count graphs) 1)
+    (throw (ex-info "Cannot create a formula from cells belonging to multiple graphs!"
+                    {:graphs graphs})))
+  graphs)
+
+(defn- discover-graph [sources]
+  (some->> (filter cell? sources)
+           (map #(.-graph %))
+           (seq)
+           (set)
+           (validate-single-graph!)
+           (first)))
 
 (defn formula
   [f updatefn]
-  #(set-formula!* (cell ::none) f
-     (.. js/Array -prototype -slice (call (js-arguments))) updatefn))
+  #(let [sources (.. js/Array -prototype -slice (call (js-arguments)))
+         graph (or (discover-graph sources) *graph*)]
+     (set-formula!* (cell ::none :graph graph) f sources updatefn)))
 
 ;; javelin util ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

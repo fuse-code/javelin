@@ -14,7 +14,7 @@
   "Returns a new input cell containing value x. The :meta option can be used
   to create the cell with the given metadata map."
   ([value] (impl/cell value))
-  ([value & {:keys [meta]}] (impl/cell value :meta meta)))
+  ([value & {:keys [meta graph]}] (impl/cell value :meta meta :graph graph)))
 
 (defn formula
   "Returns a function that returns a formula cell with f as its formula, and
@@ -85,6 +85,21 @@
 (defn constant?
   "Returns c if c is a constant formula cell, nil otherwise."
   [c] (impl/constant? c))
+
+;; Graph
+
+(defn default-graph
+  "Returns the default graph."
+  [] impl/default-graph)
+
+(defn graph
+  "Returns a graph to attach the cells to.
+  When given a cell, returns the graph that this cell belongs to."
+  ([] (graph (gensym)))
+  ([name-or-cell]
+   (if (cell? name-or-cell)
+     (impl/graph-of name-or-cell)
+     (impl/graph name-or-cell))))
 
 ;; More
 

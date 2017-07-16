@@ -10,7 +10,7 @@
   (:refer-clojure :exclude [dosync])
   (:require [clojure.string :as s]
             [clojure.test :as t :refer [deftest testing run-tests is]]
-            [javelin.core :refer [cell? input? cell set-cell! lens alts! destroy-cell! constant? formula?]]
+            [javelin.core :as core :refer [cell? input? cell set-cell! lens alts! destroy-cell! constant? formula?]]
    #? (:clj [javelin.macros :refer [cell= defc defc= set-cell!= dosync
                                     cell-doseq cell-let formula-of formulet]]))
   #? (:cljs
@@ -953,6 +953,67 @@
         (is (nil? (meta y)))
         (is (= {:bar :baz} (meta (with-meta y {:bar :baz}))))
         (is (= {:a :b} (meta (vary-meta y assoc :a :b))))))))
+
+(deftest graph-test
+  (testing "assigns to the default graph by default"
+    (let [a (cell 1), b (cell= a)]
+      (is (= (core/default-graph)
+             (core/graph a)
+             (core/graph b)))))
+
+  (testing "does not allow mixing cells from different graphs"
+    (let [g-a (core/graph :a), a (cell 1 :graph g-a)
+          g-b (core/graph :b), b (cell 1 :graph g-b)]
+      (is (thrown-with-msg? #? (:cljs js/Error :clj Exception)
+            #"multiple graphs" (cell= (+ a b)))))))
+
+#? (:clj
+
+(defn concurrently []
+  (let [g (core/graph)
+        a (cell 1 :graph g)
+        b (cell 1 :graph g)
+        a+b (cell= (+ a b))
+        a*b (cell= (* a b))
+        res (cell= [a+b a*b])
+
+        watch-result (atom [])
+        run-result (atom [])
+
+        n 10
+        l 2
+        start (java.util.concurrent.CountDownLatch. 1)
+        done (java.util.concurrent.CountDownLatch. n)]
+
+    (add-watch res nil (fn [_ _ o n] (swap! watch-result conj {:old o, :new n})))
+    (dotimes [i n]
+      (doto
+        (Thread.
+          #(do (.await start)
+               (dotimes [_ l]
+                 (clojure.core/dosync
+                   (let [before @res]
+                     (swap! a inc)
+                     (swap! run-result conj {:old before, :new @res}))))
+               (.countDown done)))
+        (.start)))
+    (.countDown start)
+    (.await done)
+
+    (let [step (fn [v] [(+ v 1) (* v 1)])]
+      (is (= (reduce (fn [acc el] (conj acc {:old (step el) ,:new (step (inc el))}))
+                     [] (map inc (range (* n l))))
+             @watch-result
+             @run-result)))))
+
+;; Due to strange self-host issues you can't have a `deftest` inside the `:clj` conditional reader block.
+;; It will also get read by the self-host compiler which will then complain about
+;; > Feature should be a keyword:  (deftest test-concurrency ..) at line 1007 javelin/core_test.cljc
+:cljs (defn concurrently []))
+
+(deftest test-concurrency
+  (dotimes [_ 10]
+    (concurrently)))
 
 ;; Global scope
 (defn test_global-function [v] v)
