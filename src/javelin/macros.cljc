@@ -49,11 +49,12 @@
   "Creates a formula cell"
   ([expr] (cell* expr &env))
   ([expr f]
-   `(with-let [c# (cell= ~expr)]
-      (macro/case
-        :cljs (set! (.-update c#) ~f)
-        :clj (clojure.core/dosync
-               (ref-set (.-update c#) ~f))))))
+   (let [c (gensym)]
+     `(with-let [~c (cell= ~expr)]
+        ~(macro/case
+           :cljs `(set! (.-update ~c) ~f)
+           :clj  `(clojure.core/dosync
+                    (ref-set (.-update ~c) ~f)))))))
 
 (defmacro set-cell!=
   ([c expr]
