@@ -1,17 +1,28 @@
 (ns javelin.macros.clj
-  (:require [riddley.compiler :as compiler]
+  (:require [clojure.set      :as sets]
+            [riddley.compiler :as compiler]
             [riddley.walk     :as walk]))
 
 (def specials (into #{} (keys (. clojure.lang.Compiler specials))))
 
 (defn hoist [x env]
-  (let [hoist    (atom [])
+  (let [globals  (ns-interns *ns*)
+        hoist    (atom [])
         pass     (atom {})
         local    #(symbol (name %))
         core?    #(= "clojure.core" (namespace %))
+        ;; We want to hoist a symbol if
+        ;;   * it's a local binding for an expression outside of `x`
+        ;;   * it's a global binding
+        ;; and it's not shadowed within the `x` at the point where it's being inspected.
+        ;; `(compiler/locals)` gives us the local bindings defined within the expression.
+        locals #(sets/difference (set (keys (compiler/locals)))
+                                 (set (keys env)))
         skip?    #(or
                     (= 'quote %)
-                    (not (contains? env %))
+                    ((locals) %)
+                    (and (not (contains? globals %))
+                         (not (contains? env %)))
                     (contains? specials %)
                     (core? %))
         find-sym #(fn [[s l]] (when (= l %) s))

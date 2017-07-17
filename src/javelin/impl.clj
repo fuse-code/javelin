@@ -102,6 +102,7 @@
   (meta [this] meta)
 
   clojure.lang.IRef
+  ;; TODO: should we `locking graph` when derefing?
   (deref [this] @state)
   (getWatches [this] @watches)
   (addWatch [this k f] (clj/dosync (alter watches assoc k f)) this)

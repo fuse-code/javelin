@@ -954,4 +954,15 @@
         (is (= {:bar :baz} (meta (with-meta y {:bar :baz}))))
         (is (= {:a :b} (meta (vary-meta y assoc :a :b))))))))
 
-(time (run-tests))
+;; Global scope
+(defn test_global-function [v] v)
+(defc test_global-cell 1)
+(let [test_local-cell (cell 2)]
+  (defc= test_global-formula
+    (let [test_global-function 1, a 2]
+      (+ test_global-cell test_local-cell test_global-function))))
+
+(deftest test-global-locals
+  (is (= 4 @test_global-formula)))
+
+#? (:cljs (time (run-tests)))
