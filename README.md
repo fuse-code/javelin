@@ -4,7 +4,7 @@ align="right" width="152"/>
 
 # A Javelin fork
 
-This is a fork of Adzerk's Javelin attempting to add Clojure support to their already-excellent Clojurescript library.  It's baed on @stathissideris's initial efforts to make the port.  If successful, I hope this work can be merged back into the original Javelin project.
+This is a fork of Adzerk's Javelin attempting to add Clojure support to their already-excellent Clojurescript library.  It's baed on @stathissideris's initial efforts to make the port.  If successful, I hope this work can be merged back into the original Javelin project.  Context for this work may be found in https://github.com/hoplon/javelin/issues/25.
 
 # Javelin [![Build Status][1]][2]
 
